@@ -564,7 +564,8 @@ function interact(){
   }
   if(tx===NPC.x && ty===NPC.y){ profTalk(); return; }
   if(t==='t'){
-    if(!S.flags.gotEevee) say(['Uma POKÉ BOLA! Parece que tem alguma coisa se mexendo lá dentro...',
+    if(!S.flags.met) say(['Uma POKÉ BOLA em cima da mesa...',`Melhor falar com o ${PROF} antes de mexer nela.`]);
+    else if(!S.flags.gotEevee) say(['Uma POKÉ BOLA! Parece que tem alguma coisa se mexendo lá dentro...',
       {t:'Abrir a POKÉ BOLA?',choice:['SIM','NÃO'],on:i=>{ if(i===0){ S.flags.gotEevee=true; S.reveal={t:0,talked:false}; sfx.pop(); } else say(['Melhor pensar mais um pouquinho...']); }}]);
     else say(['A mesa está vazia agora.']);
   }
@@ -620,7 +621,7 @@ function update(dt){
 
   if(S.reveal){ S.reveal.t+=dt;
     if(!S.reveal.talked && S.reveal.t>1.9){ S.reveal.talked=true; sfx.cry();
-      say(['Saiu um EEVEE!',{t:`${PLAYER} recebeu EEVEE!`,sfx:'jingle'},'EEVEE olhou pra você e abanou o rabinho, todo feliz!'],
+      say(['Saiu um EEVEE!',{t:`${PLAYER} recebeu EEVEE!`,sfx:'jingle'},'EEVEE olhou pra você e abanou o rabinho, todo feliz!',`${PROF}: Que lindo! Agora vem aqui, ${PLAYER}. Tenho uma coisa pra te contar!`],
         ()=>{ S.reveal=null; eevee.on=true; Object.assign(eevee,{x:player.x,y:player.y,fx:player.x,fy:player.y}); }); } }
   if(dlg){ pendingDir=null; const p=dlg.pages[dlg.i]; const L=pageLen(p);
     if(dlg.shown<L) dlg.shown=Math.min(L,dlg.shown+dt*50); else if(p.choice) dlg.choosing=true;
