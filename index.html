@@ -43,12 +43,20 @@ body{
   box-shadow:inset 0 2px 0 rgba(255,255,255,.14),inset 0 -5px 0 rgba(0,0,0,.28),0 24px 60px rgba(0,0,0,.5);
 }
 .label{
-  grid-area:label;justify-self:center;font-size:9px;letter-spacing:.12em;
+  grid-area:label;justify-self:start;font-size:9px;letter-spacing:.12em;
   background:linear-gradient(90deg,#ff8fb8,#ffd66e,#8ff0b0,#7fc8ff,#c69bff,#ff8fb8);
   background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;
   animation:prism 6s linear infinite;
 }
 @keyframes prism{to{background-position:200% 0}}
+.console{position:relative}
+.mute{
+  position:absolute;top:10px;right:14px;padding:5px 7px;border:0;border-radius:6px;cursor:pointer;
+  font-family:var(--font-pixel);font-size:7px;letter-spacing:.08em;color:var(--muted);background:var(--pad);
+  box-shadow:inset 0 -2px 0 rgba(0,0,0,.35);touch-action:none;
+}
+.mute[aria-pressed="true"]{color:#ffd66e}
+.mute:focus-visible{outline:2px solid #ffd66e;outline-offset:2px}
 .screen{grid-area:screen;background:var(--bezel);padding:12px;border-radius:10px 10px 30px 10px;min-width:0}
 canvas{display:block;width:100%;height:auto;aspect-ratio:3/2;image-rendering:pixelated;border-radius:3px;background:#000;outline:none;cursor:pointer}
 .dpad{grid-area:dpad;position:relative;width:126px;height:126px;justify-self:start;touch-action:none;margin-left:4px}
@@ -92,6 +100,7 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:3/2;image-rendering:pix
 
 <div class="console">
   <div class="label">UM PRESENTE PARA CLEO</div>
+  <button class="mute" id="mute" aria-pressed="true" aria-label="Ligar ou desligar a música">♪ ON</button>
   <div class="screen"><canvas id="game" tabindex="0" aria-label="Jogo: A Jornada de Cleo"></canvas></div>
   <div class="dpad" id="dpad" aria-label="Direcional">
     <span class="up"></span><span class="down"></span><span class="left"></span><span class="right"></span><span class="hub"></span>
@@ -383,12 +392,14 @@ buildBg('town'); buildBg('lab');
 // ---------- som ----------
 let ac=null;
 function audio(){ if(!ac){ try{ ac=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ ac=null; } } if(ac && ac.state==='suspended') ac.resume(); return ac; }
-function tone(f,d,{type='square',v=.035,at=0,to=null}={}){
-  const a=ac; if(!a) return; const t0=a.currentTime+at;
+let musicOut=null, sfxOut=null;
+function buses(){ if(musicOut||!ac) return; musicOut=ac.createGain(); sfxOut=ac.createGain(); musicOut.connect(ac.destination); sfxOut.connect(ac.destination); musicOut.gain.value=musicOn?1:0; }
+function tone(f,d,{type='square',v=.035,at=0,to=null,t0=null,out=null}={}){
+  const a=ac; if(!a) return; buses(); if(t0===null) t0=a.currentTime+at;
   const o=a.createOscillator(), g=a.createGain(); o.type=type; o.frequency.setValueAtTime(f,t0);
   if(to) o.frequency.exponentialRampToValueAtTime(to,t0+d);
   g.gain.setValueAtTime(v,t0); g.gain.exponentialRampToValueAtTime(.0001,t0+d);
-  o.connect(g).connect(a.destination); o.start(t0); o.stop(t0+d+.03);
+  o.connect(g).connect(out||sfxOut); o.start(t0); o.stop(t0+d+.03);
 }
 const N=n=>440*Math.pow(2,(n-69)/12);
 function melody(seq,v=.03){ let t=0; for(const [n,d] of seq){ if(n){ tone(N(n),d*.92,{at:t,v}); tone(N(n-12),d*.92,{at:t,type:'triangle',v:v*1.4}); } t+=d; } }
@@ -399,9 +410,63 @@ const sfx = {
   start(){ [72,76,79,84].forEach((n,i)=>tone(N(n),.12,{at:i*.08})); },
   pop(){ tone(300,.25,{to:1200,v:.04}); },
   cry(){ tone(720,.14,{to:1500,v:.03}); tone(1400,.22,{at:.15,to:820,v:.03}); },
-  jingle(){ melody([[67,.12],[67,.12],[67,.12],[72,.36],[71,.12],[72,.12],[74,.12],[76,.55]]); },
-  fanfare(){ melody([[72,.15],[76,.15],[79,.15],[84,.4],[0,.05],[79,.15],[84,.7],[0,.1],[81,.15],[83,.15],[84,.9]]); }
+  jingle(){ duck(2); melody([[67,.12],[67,.12],[67,.12],[72,.36],[71,.12],[72,.12],[74,.12],[76,.55]]); },
+  fanfare(){ duck(3.4); melody([[72,.15],[76,.15],[79,.15],[84,.4],[0,.05],[79,.15],[84,.7],[0,.1],[81,.15],[83,.15],[84,.9]]); }
 };
+
+// ---------- música de fundo (composição original, estilo Game Boy) ----------
+// notas em MIDI, duração em colcheias; 0 = pausa
+const SONGS = {
+  town:{ bpm:132, v:.022, lead:[
+    [76,2],[74,1],[72,1],[74,2],[67,2],  [72,2],[76,1],[79,1],[81,3],[79,1],
+    [77,2],[76,1],[74,1],[76,2],[72,2],  [74,4],[0,2],[67,2],
+    [76,2],[74,1],[72,1],[74,2],[67,2],  [72,2],[76,1],[79,1],[84,3],[83,1],
+    [81,2],[79,1],[77,1],[76,2],[74,2],  [72,4],[0,4]],
+    roots:[48,41,48,43,48,41,38,48], bass:'walk' },
+  lab:{ bpm:100, v:.018, lead:[
+    [69,2],[72,2],[77,3],[76,1],  [74,2],[72,2],[69,4],
+    [70,2],[74,2],[79,3],[77,1],  [76,4],[72,4],
+    [69,2],[72,2],[77,3],[79,1],  [81,2],[79,2],[77,2],[74,2],
+    [72,2],[70,2],[69,2],[67,2],  [65,6],[0,2]],
+    roots:[41,41,46,48,41,38,48,41], bass:'calm' }
+};
+let musicOn=true; try{ musicOn=localStorage.getItem('cleo-music')!=='off'; }catch(_){}
+let noiseBuf=null;
+const bgm={ song:null, li:0, lt:0, bi:0, bt:0, pt:0 };
+function duck(sec){ if(!ac||!musicOut) return; const g=musicOut.gain, t=ac.currentTime; g.cancelScheduledValues(t); g.setValueAtTime(0,t); g.setValueAtTime(0,t+sec); g.linearRampToValueAtTime(musicOn?1:0,t+sec+.6); }
+function bassLine(song){
+  const out=[];
+  for(const r of song.roots){
+    if(song.bass==='walk') out.push([r,2],[r+7,2],[r+12,2],[r+7,2]); else out.push([r,4],[r+7,4]);
+  }
+  return out;
+}
+function playSong(name){
+  if(bgm.song===name) return; bgm.song=name; if(!ac) return;
+  const t=ac.currentTime+.08; Object.assign(bgm,{li:0,bi:0,lt:t,bt:t,pt:t,bassSeq:name?bassLine(SONGS[name]):null});
+}
+function hat(t0,v){
+  if(!noiseBuf){ noiseBuf=ac.createBuffer(1,ac.sampleRate*.05,ac.sampleRate); const d=noiseBuf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; }
+  const s=ac.createBufferSource(), g=ac.createGain(), f=ac.createBiquadFilter(); f.type='highpass'; f.frequency.value=6000;
+  s.buffer=noiseBuf; g.gain.setValueAtTime(v,t0); g.gain.exponentialRampToValueAtTime(.0001,t0+.04);
+  s.connect(f).connect(g).connect(musicOut); s.start(t0); s.stop(t0+.05);
+}
+function musicTick(){
+  if(!ac||!bgm.song||ac.state!=='running') return; buses();
+  const song=SONGS[bgm.song], e=60/song.bpm/2, now=ac.currentTime, ahead=now+.25;
+  if(bgm.lt<now-.1){ bgm.lt=bgm.bt=bgm.pt=now+.05; }
+  while(bgm.lt<ahead){ const [n,l]=song.lead[bgm.li]; if(n) tone(N(n),l*e*.9,{t0:bgm.lt,v:song.v,out:musicOut}); bgm.lt+=l*e; bgm.li=(bgm.li+1)%song.lead.length; }
+  while(bgm.bt<ahead){ const [n,l]=bgm.bassSeq[bgm.bi]; tone(N(n),l*e*.85,{t0:bgm.bt,type:'triangle',v:song.v*2.2,out:musicOut}); bgm.bt+=l*e; bgm.bi=(bgm.bi+1)%bgm.bassSeq.length; }
+  while(bgm.pt<ahead){ hat(bgm.pt,song.bass==='walk'?.02:.01); bgm.pt+=e*2; }
+}
+function setMusic(on){
+  musicOn=on; try{ localStorage.setItem('cleo-music',on?'on':'off'); }catch(_){}
+  const b=document.getElementById('mute'); b.setAttribute('aria-pressed',String(on)); b.textContent=on?'♪ ON':'♪ OFF';
+  if(ac&&musicOut){ const g=musicOut.gain; g.cancelScheduledValues(ac.currentTime); g.setValueAtTime(on?1:0,ac.currentTime); }
+}
+setMusic(musicOn);
+document.getElementById('mute').addEventListener('pointerdown',e=>{ e.preventDefault(); e.stopPropagation(); audio(); setMusic(!musicOn); });
+document.addEventListener('visibilitychange',()=>{ if(!ac) return; if(document.hidden) ac.suspend(); else ac.resume(); });
 
 // ---------- entrada ----------
 const held=[]; let pendingDir=null, aQueued=false;
@@ -412,6 +477,7 @@ const KEYMAP={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right',
 addEventListener('keydown',e=>{
   const d=KEYMAP[e.code];
   if(d){ e.preventDefault(); audio(); if(!e.repeat) pressDir(d); return; }
+  if(e.code==='KeyM'){ audio(); setMusic(!musicOn); return; }
   if(['Space','Enter','KeyZ','KeyX'].includes(e.code)){ e.preventDefault(); audio(); if(!e.repeat) pressA(); }
 });
 addEventListener('keyup',e=>{ const d=KEYMAP[e.code]; if(d) releaseDir(d); });
@@ -535,6 +601,9 @@ function profTalk(){
 // ---------- loop ----------
 function update(dt){
   S.t+=dt; player.bump-=dt;
+  const want = S.scene==='title' ? 'town' : S.scene==='end' ? (S.endT>3.2?'town':null) : S.map==='lab' ? 'lab' : 'town';
+  if(ac && want!==bgm.song) playSong(want);
+  musicTick();
   if(trans){
     trans.t+=dt;
     if(!trans.swapped && trans.t>=trans.dur){ trans.swapped=true; trans.mid(); }
