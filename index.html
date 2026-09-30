@@ -57,7 +57,25 @@ body{
 }
 .mute[aria-pressed="true"]{color:#ffd66e}
 .mute:focus-visible{outline:2px solid #ffd66e;outline-offset:2px}
-.screen{grid-area:screen;background:var(--bezel);padding:12px;border-radius:10px 10px 30px 10px;min-width:0}
+.screen{grid-area:screen;background:var(--bezel);padding:12px;border-radius:10px 10px 30px 10px;min-width:0;position:relative}
+.lock{
+  position:absolute;inset:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  background:rgba(27,20,40,.88);border-radius:3px;text-align:center;padding-inline:12px;
+}
+.lock p{margin:0;font-size:10px;line-height:1.7;color:var(--ink)}
+.lock form{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%}
+.lock input{
+  font-family:var(--font-pixel);font-size:16px;width:min(100%,200px);box-sizing:border-box;padding:8px 10px;
+  border:3px solid var(--btn-a);border-radius:4px;background:#fbf8ff;color:#3a3450;
+  -webkit-user-select:text;user-select:text;
+}
+.lock input:focus{outline:2px solid #ffd66e;outline-offset:2px}
+.lock button{font-family:var(--font-pixel);font-size:10px;padding:10px 12px;border:0;border-radius:4px;background:var(--btn-a);color:#fff;cursor:pointer}
+.lock button:focus-visible{outline:2px solid #ffd66e;outline-offset:2px}
+.lock .err{font-size:8px;color:#ffd66e;min-height:1em}
+.lock.shake{animation:shake .3s}
+.lock[hidden]{display:none}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 canvas{display:block;width:100%;height:auto;aspect-ratio:3/2;image-rendering:pixelated;border-radius:3px;background:#000;outline:none;cursor:pointer}
 .dpad{grid-area:dpad;position:relative;width:126px;height:126px;justify-self:start;touch-action:none;margin-left:4px}
 .dpad span{position:absolute;background:var(--pad);box-shadow:inset 0 -3px 0 rgba(0,0,0,.35)}
@@ -101,7 +119,16 @@ canvas{display:block;width:100%;height:auto;aspect-ratio:3/2;image-rendering:pix
 <div class="console">
   <div class="label">UM PRESENTE PARA CLEO</div>
   <button class="mute" id="mute" aria-pressed="true" aria-label="Ligar ou desligar a música">♪ ON</button>
-  <div class="screen"><canvas id="game" tabindex="0" aria-label="Jogo: A Jornada de Cleo"></canvas></div>
+  <div class="screen"><canvas id="game" tabindex="0" aria-label="Jogo: A Jornada de Cleo"></canvas>
+    <div class="lock" id="lock">
+      <p>Este jogo é só para<br>uma treinadora.<br>Qual é a senha?</p>
+      <form id="lockForm" autocomplete="off">
+        <input id="pass" type="password" aria-label="Senha" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button type="submit">OK</button>
+      </form>
+      <div class="err" id="lockErr" aria-live="polite"></div>
+    </div>
+  </div>
   <div class="dpad" id="dpad" aria-label="Direcional">
     <span class="up"></span><span class="down"></span><span class="left"></span><span class="right"></span><span class="hub"></span>
   </div>
@@ -475,6 +502,7 @@ function releaseDir(d){ const i=held.indexOf(d); if(i>=0) held.splice(i,1); }
 function pressA(){ aQueued=true; }
 const KEYMAP={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right',KeyW:'up',KeyS:'down',KeyA:'left',KeyD:'right'};
 addEventListener('keydown',e=>{
+  if(locked || e.target.tagName==='INPUT') return;
   const d=KEYMAP[e.code];
   if(d){ e.preventDefault(); audio(); if(!e.repeat) pressDir(d); return; }
   if(e.code==='KeyM'){ audio(); setMusic(!musicOn); return; }
@@ -600,8 +628,23 @@ function profTalk(){
 }
 
 // ---------- loop ----------
+// ---------- senha ----------
+const PASS_HASH='a95b1915ec5cf5ae13c75ffc8f37cdc8f5abe998154182fd98f532282f7769dc';
+let locked=true;
+try{ locked=localStorage.getItem('cleo-ok')!==PASS_HASH; }catch(_){}
+const lockEl=document.getElementById('lock');
+lockEl.hidden=!locked;
+async function sha256(t){ const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join(''); }
+document.getElementById('lockForm').addEventListener('submit',async e=>{
+  e.preventDefault(); const inp=document.getElementById('pass'), err=document.getElementById('lockErr');
+  let h=''; try{ h=await sha256(inp.value); }catch(_){ err.textContent='Abra o link em https para jogar.'; return; }
+  if(h===PASS_HASH){ locked=false; lockEl.hidden=true; audio(); sfx.start(); try{ localStorage.setItem('cleo-ok',PASS_HASH); }catch(_){} inp.blur(); try{ cv.focus({preventScroll:true}); }catch(_){} }
+  else { err.textContent='Senha errada. Tente de novo!'; inp.value=''; lockEl.classList.remove('shake'); void lockEl.offsetWidth; lockEl.classList.add('shake'); }
+});
+
 function update(dt){
   S.t+=dt; player.bump-=dt;
+  if(locked){ aQueued=false; pendingDir=null; return; }
   const want = S.scene==='title' ? 'town' : S.scene==='end' ? (S.endT>3.2?'town':null) : S.map==='lab' ? 'lab' : 'town';
   if(ac && want!==bgm.song) playSong(want);
   musicTick();
